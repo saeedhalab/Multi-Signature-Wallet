@@ -1,6 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-contract MultiSigWallet{
-    
+contract MultiSigWallet {
+    event Deposit(address sender, uint256 amount, uint256 balance);
+    event ExcuteTransaction(uint256 txId, address owner);
+    event RevokeConfirmation(uint256 txId, address owner);
+    event ConfirmTransaction(uint256 txId, address owner);
+    event SubmitTransaction(
+        address owner,
+        address to,
+        uint256 txId,
+        uint256 value,
+        bytes data
+    );
+    event AddOwner(address owner, address newOwner);
+    //event RemoveOwner(address owner,address newOwner);
+
+    address[] public owners;
+    uint8 ConfirmationCount;
+    struct Transaction {
+        address to;
+        uint64 value;
+        uint64 id;
+        uint8 numConfirmation;
+        bytes data;
+        bool excuted;
+    }
+    mapping(address => bool) isOwner;
+    // mapping from tx index => owner => bool
+    mapping(uint256 => mapping(address => bool)) isConfirm;
+    Transaction[] transactions;
 }
