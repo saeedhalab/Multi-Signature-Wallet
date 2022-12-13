@@ -30,4 +30,21 @@ contract MultiSigWallet {
     // mapping from tx index => owner => bool
     mapping(uint256 => mapping(address => bool)) isConfirm;
     Transaction[] transactions;
+
+    modifier onlyOwner() {
+        require(isOwner[msg.sender]);
+        _;
+    }
+    modifier isNotConfirm(uint256 txId) {
+        require(!isConfirm[txId][msg.sender],"tx already confirmed");
+        _;
+    }
+    modifier isNotExcute(uint256 txId) {
+        require(!transactions[txId].excuted,"tx already excuted");
+        _;
+    }
+    modifier toExist(uint txIndex)[
+        require(transactions.length<=txIndex,"tx does not exist");
+        _;
+    ]
 }
