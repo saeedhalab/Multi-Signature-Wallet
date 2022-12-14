@@ -21,10 +21,9 @@ contract MultiSigWallet {
     struct Transaction {
         address to;
         uint64 value;
-        uint64 id;
-        uint8 numConfirmation;
+        uint8 numConfirmations;
         bytes data;
-        bool excuted;
+        bool executed;
     }
     mapping(address => bool) isOwner;
     // mapping from tx index => owner => bool
@@ -40,7 +39,7 @@ contract MultiSigWallet {
         _;
     }
     modifier isNotExcute(uint256 txId) {
-        require(!transactions[txId].excuted, "tx already excuted");
+        require(!transactions[txId].executed, "tx already excuted");
         _;
     }
     modifier toExist(uint256 txIndex) {
@@ -63,5 +62,89 @@ contract MultiSigWallet {
             owners.push(owner);
         }
         numConfirmationsRequired = _numConfirmationRequired;
+    }
+
+    function submitTransaction(
+        address _to,
+        uint64 _value,
+        bytes memory _data
+    ) public onlyOwner {
+        uint256 txId = transactions.length;
+        transactions.push(
+            Transaction({
+                to: _to,
+                value: _value,
+                data: _data,
+                executed: false,
+                numConfirmations: 0
+            })
+        );
+        emit SubmitTransaction(msg.sender, _to, txId, _value, _data);
+    }
+
+    function confirmTransaction(uint256 _txId)
+        public
+        onlyOwner
+        toExist(_txId)
+        isNotExcute(_txId)
+        isNotConfirm(_txId)
+    {
+        Transaction storage transaction = transactions[_txId];
+        transaction.numConfirmations += 1;
+        isConfirm[_txId][msg.sender] = true;
+        emit ConfirmTransaction(_txId, msg.sender);
+    }
+
+    function revokeTransaction(uint256 _txId)
+        public
+        onlyOwner
+        toExist(_txId)
+        isNotExcute(_txId)
+    {
+        require(isConfirm[_txId][msg.sender], "tx not confirmed");
+        Transaction storage transaction = transactions[_txId];
+        transaction.numConfirmations -= 1;
+        isConfirm[_txId][msg.sender] = false;
+        emit RevokeConfirmation(_txId, msg.sender);
+    }
+
+    function excuteTransaction(uint256 _txId)
+        public
+        onlyOwner
+        toExist(_txId)
+        isNotExcute(_txId)
+    {
+        Transaction storage transaction = transactions[_txId];
+        require(
+            transaction.numConfirmations >= numConfirmationsRequired,
+            "cannot execute tx"
+        );
+        transaction.executed = true;
+        (bool success, ) = transaction.to.call{value: transaction.value}(
+            transaction.data
+        );
+        require(success, "tx failed");
+        emit ExcuteTransaction(_txId, msg.sender);
+    }
+
+    function getTransaction(uint256 _txId)
+        public
+        view
+        returns (
+            address to,
+            uint64 value,
+            uint8 numConfirmation,
+            bytes memory data,
+            bool excuted
+        )
+    {
+        Transaction memory transaction = transactions[_txId];
+        return (
+            transaction.to,
+            transaction.value,
+            transaction.numConfirmations,
+            transaction.data,
+            transaction.executed
+        );
     }
 }
