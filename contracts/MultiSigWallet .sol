@@ -17,7 +17,7 @@ contract MultiSigWallet {
     //event RemoveOwner(address owner,address newOwner);
 
     address[] public owners;
-    uint8 ConfirmationCount;
+    uint8 public numConfirmationsRequired;
     struct Transaction {
         address to;
         uint64 value;
@@ -36,15 +36,32 @@ contract MultiSigWallet {
         _;
     }
     modifier isNotConfirm(uint256 txId) {
-        require(!isConfirm[txId][msg.sender],"tx already confirmed");
+        require(!isConfirm[txId][msg.sender], "tx already confirmed");
         _;
     }
     modifier isNotExcute(uint256 txId) {
-        require(!transactions[txId].excuted,"tx already excuted");
+        require(!transactions[txId].excuted, "tx already excuted");
         _;
     }
-    modifier toExist(uint txIndex)[
-        require(transactions.length<=txIndex,"tx does not exist");
+    modifier toExist(uint256 txIndex) {
+        require(transactions.length <= txIndex, "tx does not exist");
         _;
-    ]
+    }
+
+    constructor(address[] memory _owners, uint8 _numConfirmationRequired) {
+        require(_owners.length > 0, "owners required");
+        require(
+            _numConfirmationRequired <= _owners.length &&
+                _numConfirmationRequired > 0,
+            "invalid number of required confirmations"
+        );
+        for (uint256 i = 0; i < _owners.length; i++) {
+            address owner = _owners[i];
+            require(owner != address(0), "invalid owner");
+            require(!isOwner[owner], "owner not unique");
+            isOwner[owner] = true;
+            owners.push(owner);
+        }
+        numConfirmationsRequired = _numConfirmationRequired;
+    }
 }
