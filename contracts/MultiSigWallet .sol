@@ -221,4 +221,121 @@ contract MultiSigWallet {
         );
     }
 
+    function submitOwnerForm(
+        bytes memory _desc,
+        uint8 _suggNumConfirmRequired,
+        address _suggesOwnerAddress
+    )
+        public
+        onlyOwner(msg.sender)
+        isValidNumConfirmaionRequired(_suggNumConfirmRequired, false)
+    {
+        require(_suggesOwnerAddress != address(0), "address not valid");
+        uint256 id = ownerForms.length;
+        uint64 expireTime = uint64((block.timestamp) + 1 weeks);
+        ownerForms.push(
+            ownerForm({
+                desc: _desc,
+                numConfirmationsRequired: _suggNumConfirmRequired,
+                numConfirmation: 0,
+                expireTime: expireTime,
+                ownerAddress: _suggesOwnerAddress,
+                isExpire: false,
+                isRemoveOwner: false
+            })
+        );
+
+        emit SubmitOwnerForm(
+            _suggesOwnerAddress,
+            id,
+            _desc,
+            _suggNumConfirmRequired,
+            expireTime,
+            false
+        );
+    }
+
+    function submitRemovedOwerForm(
+        bytes memory _desc,
+        uint8 _suggNumConfirmRequired,
+        address _removedOwnerAddress
+    )
+        public
+        onlyOwner(msg.sender)
+        onlyOwner(_removedOwnerAddress)
+        isValidNumConfirmaionRequired(_suggNumConfirmRequired, true)
+    {
+        uint256 id = ownerForms.length;
+        uint64 expireTime = uint64((block.timestamp) + 1 weeks);
+        ownerForms.push(
+            ownerForm({
+                desc: _desc,
+                numConfirmationsRequired: _suggNumConfirmRequired,
+                numConfirmation: 0,
+                expireTime: expireTime,
+                ownerAddress: _removedOwnerAddress,
+                isExpire: false,
+                isRemoveOwner: true
+            })
+        );
+
+        emit SubmitOwnerForm(
+            _removedOwnerAddress,
+            id,
+            _desc,
+            _suggNumConfirmRequired,
+            expireTime,
+            true
+        );
+    }
+
+    function confirmOwnerForm(uint256 _formId)
+        public
+        onlyOwner(msg.sender)
+        isExistForm(_formId)
+        isNotExpireForm(_formId)
+        isNotConfirmOwnerForm(_formId)
+    {
+        ownerForm storage form = ownerForms[_formId];
+        form.numConfirmation++;
+        isConfirmOwnerForm[_formId][msg.sender] = true;
+        emit ConfirmOwnerForm(_formId, msg.sender);
+        if (form.numConfirmation >= numConfirmationsRequired) {
+            _excuteOwnerForm(_formId);
+        }
+    }
+
+    function revokeOwnerForm(uint256 _formId)
+        public
+        onlyOwner(msg.sender)
+        isExistForm(_formId)
+        isNotExpireForm(_formId)
+    {
+        require(isConfirmOwnerForm[_formId][msg.sender], "is not confirm form");
+        ownerForm storage form = ownerForms[_formId];
+        form.numConfirmation--;
+        isConfirmOwnerForm[_formId][msg.sender] = false;
+        emit RevokeOwnerFormConfirmation(_formId, msg.sender);
+    }
+
+    function _excuteOwnerForm(uint256 _formId) private {
+        ownerForm storage form = ownerForms[_formId];
+        form.isExpire = true;
+        numConfirmationsRequired = form.numConfirmationsRequired;
+        if (form.isRemoveOwner) {
+            _deleteOwner(form.ownerAddress);
+        } else {
+            owners.push(form.ownerAddress);
+        }
+        emit ExcuteOwnerForm(_formId, msg.sender, form.ownerAddress);
+    }
+
+    function _deleteOwner(address _owner) private {
+        for (uint256 i = 0; i < owners.length; i++) {
+            if (owners[i] == _owner) {
+                delete owners[i];
+                return;
+            }
+        }
+    }
 }
