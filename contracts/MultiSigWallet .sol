@@ -224,13 +224,17 @@ contract MultiSigWallet {
     function submitOwnerForm(
         bytes memory _desc,
         uint8 _suggNumConfirmRequired,
-        address _suggesOwnerAddress
+        address _ownerAddress,
+        bool _isSubmitRemovedOwnerForm
     )
         public
         onlyOwner(msg.sender)
-        isValidNumConfirmaionRequired(_suggNumConfirmRequired, false)
+        isValidNumConfirmaionRequired(
+            _suggNumConfirmRequired,
+            _isSubmitRemovedOwnerForm
+        )
     {
-        require(_suggesOwnerAddress != address(0), "address not valid");
+        require(_ownerAddress != address(0), "address not valid");
         uint256 id = ownerForms.length;
         uint64 expireTime = uint64((block.timestamp) + 1 weeks);
         ownerForms.push(
@@ -239,53 +243,18 @@ contract MultiSigWallet {
                 numConfirmationsRequired: _suggNumConfirmRequired,
                 numConfirmation: 0,
                 expireTime: expireTime,
-                ownerAddress: _suggesOwnerAddress,
+                ownerAddress: _ownerAddress,
                 isExpire: false,
-                isRemoveOwner: false
+                isRemoveOwner: _isSubmitRemovedOwnerForm
             })
         );
-
         emit SubmitOwnerForm(
-            _suggesOwnerAddress,
+            _ownerAddress,
             id,
             _desc,
             _suggNumConfirmRequired,
             expireTime,
-            false
-        );
-    }
-
-    function submitRemovedOwerForm(
-        bytes memory _desc,
-        uint8 _suggNumConfirmRequired,
-        address _removedOwnerAddress
-    )
-        public
-        onlyOwner(msg.sender)
-        onlyOwner(_removedOwnerAddress)
-        isValidNumConfirmaionRequired(_suggNumConfirmRequired, true)
-    {
-        uint256 id = ownerForms.length;
-        uint64 expireTime = uint64((block.timestamp) + 1 weeks);
-        ownerForms.push(
-            ownerForm({
-                desc: _desc,
-                numConfirmationsRequired: _suggNumConfirmRequired,
-                numConfirmation: 0,
-                expireTime: expireTime,
-                ownerAddress: _removedOwnerAddress,
-                isExpire: false,
-                isRemoveOwner: true
-            })
-        );
-
-        emit SubmitOwnerForm(
-            _removedOwnerAddress,
-            id,
-            _desc,
-            _suggNumConfirmRequired,
-            expireTime,
-            true
+            _isSubmitRemovedOwnerForm
         );
     }
 
@@ -337,5 +306,35 @@ contract MultiSigWallet {
                 return;
             }
         }
+    }
+
+    function getOwnerForm(uint256 _formId)
+        public
+        view
+        isExistForm(_formId)
+        returns (
+            bytes memory _desc,
+            uint8 _numConfirmation,
+            uint8 _numConfirmationsRequired,
+            uint64 _expireTime,
+            bool _isRemoveOwne,
+            bool _isExpire,
+            address _ownerAddress
+        )
+    {
+        ownerForm memory form = ownerForms[_formId];
+        return (
+            form.desc,
+            form.numConfirmation,
+            form.numConfirmationsRequired,
+            form.expireTime,
+            form.isRemoveOwner,
+            form.isExpire,
+            form.ownerAddress
+        );
+    }
+
+    function getOwnersCount() public view returns (uint256) {
+        return owners.length;
     }
 }
