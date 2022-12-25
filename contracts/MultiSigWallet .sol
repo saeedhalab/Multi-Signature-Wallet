@@ -3,26 +3,27 @@ pragma solidity ^0.8.17;
 
 contract MultiSigWallet {
     event Deposit(address sender, uint256 amount, uint256 balance);
-    event ExcuteTransaction(uint256 txId, address owner);
-    event RevokeConfirmation(uint256 txId, address owner);
+    event ExcuteTransaction(uint256 txIndex, address owner);
+    event RevokeConfirmation(uint256 txIndex, address owner);
     event ConfirmTransaction(
-        uint256 txId,
+        uint256 txIndex,
         address owner,
         uint8 numConfirmations
     );
-    event ConfirmOwnerForm(uint256 txId, address owner);
-    event RevokeOwnerFormConfirmation(uint256 txId, address owner);
+    event ConfirmOwnerForm(uint256 formIndex, address owner);
+    event RevokeOwnerFormConfirmation(uint256 formIndex, address owner);
     event ExcuteOwnerForm(uint256 formId, address owner, address suggesOwner);
     event SubmitTransaction(
         address owner,
         address to,
-        uint256 txId,
+        uint256 txIndex,
         uint256 value,
-        bytes data
+        bytes data,
+        uint64 expierTime
     );
     event SubmitOwnerForm(
         address suggesOwner,
-        uint256 id,
+        uint256 formIndex,
         bytes desc,
         uint8 numConfirmationsRequired,
         uint256 expireTime,
@@ -34,6 +35,7 @@ contract MultiSigWallet {
     struct Transaction {
         address to;
         uint64 value;
+        uint64 expireTime;
         uint8 numConfirmations;
         bytes data;
         bool executed;
@@ -44,7 +46,7 @@ contract MultiSigWallet {
         uint8 numConfirmationsRequired;
         uint64 expireTime;
         bool isRemoveOwner;
-        bool isExpire;
+        bool executed;
         address ownerAddress;
     }
     mapping(address => bool) isOwner;
@@ -58,40 +60,45 @@ contract MultiSigWallet {
         require(isOwner[owner]);
         _;
     }
-    modifier isNotConfirm(uint256 txId) {
-        require(!isConfirm[txId][msg.sender], "tx already confirmed");
+    modifier isNotConfirm(uint256 txIndex) {
+        require(!isConfirm[txIndex][msg.sender], "tx already confirmed");
         _;
     }
-    modifier isNotExcute(uint256 txId) {
-        require(!transactions[txId].executed, "tx already excuted");
+    modifier isNotExcute(uint256 txIndex) {
+        require(!transactions[txIndex].executed, "tx already excuted");
+        _;
+    }
+    modifier isNotExpire(uint256 txIndex) {
+        uint64 nowTime = uint64(block.timestamp);
+        require(nowTime < transactions[txIndex].expireTime, "form dos expired");
         _;
     }
     modifier isExistTransaction(uint256 txIndex) {
         require(transactions.length >= txIndex, "tx does not exist");
         _;
     }
-    modifier isExistForm(uint256 _formId) {
-        require(ownerForms.length >= _formId, "form does not exist");
+    modifier isExistForm(uint256 formIndex) {
+        require(ownerForms.length >= formIndex, "form does not exist");
         _;
     }
-    modifier isNotConfirmOwnerForm(uint256 _formId) {
+    modifier isNotConfirmOwnerForm(uint256 formIndex) {
         require(
-            !isConfirmOwnerForm[_formId][msg.sender],
+            !isConfirmOwnerForm[formIndex][msg.sender],
             "tx already confirmed"
         );
         _;
     }
-    modifier isNotExpireForm(uint256 _formId) {
+    modifier isNotExpireForm(uint256 formIndex) {
         uint64 nowTime = uint64(block.timestamp);
-        require(
-            nowTime < ownerForms[_formId].expireTime &&
-                !ownerForms[_formId].isExpire,
-            "form dos expired"
-        );
+        require(nowTime < ownerForms[formIndex].expireTime, "form dos expired");
+        _;
+    }
+    modifier isNotExcuteOwnerForm(uint256 formIndex) {
+        require(!ownerForms[formIndex].executed, "form already excuted");
         _;
     }
     modifier isValidNumConfirmaionRequired(
-        uint8 _numConfirmRequire,
+        uint8 numConfirmRequire,
         bool isRemoved
     ) {
         uint8 ownersNum;
@@ -103,7 +110,7 @@ contract MultiSigWallet {
         }
         require(ownersNum >= 2, "min owner is two");
         require(
-            ownersNum >= _numConfirmRequire && _numConfirmRequire > 1,
+            ownersNum >= numConfirmRequire && numConfirmRequire > 1,
             "numConfirmRequire is invalid"
         );
         uint8 num = ownersNum % 2;
@@ -114,8 +121,8 @@ contract MultiSigWallet {
             minConfrimation = (ownersNum + 1) / 2;
         }
         require(
-            _numConfirmRequire >= minConfrimation &&
-                _numConfirmRequire <= ownersNum,
+            numConfirmRequire >= minConfrimation &&
+                numConfirmRequire <= ownersNum,
             "numConfirmRequire is invalid"
         );
         _;
@@ -144,22 +151,32 @@ contract MultiSigWallet {
         bytes memory _data
     ) public onlyOwner(msg.sender) {
         uint256 txId = transactions.length;
+        uint64 expireTime = uint64((block.timestamp) + 1 weeks);
         transactions.push(
             Transaction({
                 to: _to,
                 value: _value,
+                expireTime: expireTime,
                 data: _data,
                 executed: false,
                 numConfirmations: 0
             })
         );
-        emit SubmitTransaction(msg.sender, _to, txId, _value, _data);
+        emit SubmitTransaction(
+            msg.sender,
+            _to,
+            txId,
+            _value,
+            _data,
+            expireTime
+        );
     }
 
     function confirmTransaction(uint256 _txId)
         public
         onlyOwner(msg.sender)
         isExistTransaction(_txId)
+        isNotExpire(_txId)
         isNotExcute(_txId)
         isNotConfirm(_txId)
     {
@@ -173,26 +190,28 @@ contract MultiSigWallet {
         );
     }
 
-    function revokeTransaction(uint256 _txId)
+    function revokeTransaction(uint256 _txIndex)
         public
         onlyOwner(msg.sender)
-        isExistTransaction(_txId)
-        isNotExcute(_txId)
+        isNotExpire(_txIndex)
+        isExistTransaction(_txIndex)
+        isNotExcute(_txIndex)
     {
-        require(isConfirm[_txId][msg.sender], "tx not confirmed");
-        Transaction storage transaction = transactions[_txId];
+        require(isConfirm[_txIndex][msg.sender], "tx not confirmed");
+        Transaction storage transaction = transactions[_txIndex];
         transaction.numConfirmations -= 1;
-        isConfirm[_txId][msg.sender] = false;
-        emit RevokeConfirmation(_txId, msg.sender);
+        isConfirm[_txIndex][msg.sender] = false;
+        emit RevokeConfirmation(_txIndex, msg.sender);
     }
 
-    function excuteTransaction(uint256 _txId)
+    function excuteTransaction(uint256 _txIndex)
         public
         onlyOwner(msg.sender)
-        isExistTransaction(_txId)
-        isNotExcute(_txId)
+        isNotExpire(_txIndex)
+        isExistTransaction(_txIndex)
+        isNotExcute(_txIndex)
     {
-        Transaction storage transaction = transactions[_txId];
+        Transaction storage transaction = transactions[_txIndex];
         require(
             transaction.numConfirmations >= numConfirmationsRequired,
             "cannot execute tx"
@@ -203,10 +222,10 @@ contract MultiSigWallet {
         );
 
         require(success, "tx failed");
-        emit ExcuteTransaction(_txId, msg.sender);
+        emit ExcuteTransaction(_txIndex, msg.sender);
     }
 
-    function getTransaction(uint256 _txId)
+    function getTransaction(uint256 _txIndex)
         public
         view
         returns (
@@ -217,7 +236,7 @@ contract MultiSigWallet {
             bool excuted
         )
     {
-        Transaction memory transaction = transactions[_txId];
+        Transaction memory transaction = transactions[_txIndex];
         return (
             transaction.to,
             transaction.value,
@@ -250,7 +269,7 @@ contract MultiSigWallet {
                 numConfirmation: 0,
                 expireTime: expireTime,
                 ownerAddress: _ownerAddress,
-                isExpire: false,
+                executed: false,
                 isRemoveOwner: _isSubmitRemovedOwnerForm
             })
         );
@@ -264,47 +283,57 @@ contract MultiSigWallet {
         );
     }
 
-    function confirmOwnerForm(uint256 _formId)
+    function confirmOwnerForm(uint256 _formIndex)
         public
         onlyOwner(msg.sender)
-        isExistForm(_formId)
-        isNotExpireForm(_formId)
-        isNotConfirmOwnerForm(_formId)
+        isExistForm(_formIndex)
+        isNotExcuteOwnerForm(_formIndex)
+        isNotExpireForm(_formIndex)
+        isNotConfirmOwnerForm(_formIndex)
     {
-        ownerForm storage form = ownerForms[_formId];
+        ownerForm storage form = ownerForms[_formIndex];
         form.numConfirmation++;
-        isConfirmOwnerForm[_formId][msg.sender] = true;
-        emit ConfirmOwnerForm(_formId, msg.sender);
+        isConfirmOwnerForm[_formIndex][msg.sender] = true;
+        emit ConfirmOwnerForm(_formIndex, msg.sender);
     }
 
-    function revokeOwnerForm(uint256 _formId)
+    function revokeOwnerForm(uint256 _formIndex)
         public
         onlyOwner(msg.sender)
-        isExistForm(_formId)
-        isNotExpireForm(_formId)
+        isExistForm(_formIndex)
+        isNotExpireForm(_formIndex)
+        isNotExcuteOwnerForm(_formIndex)
     {
-        require(isConfirmOwnerForm[_formId][msg.sender], "is not confirm form");
-        ownerForm storage form = ownerForms[_formId];
+        require(
+            isConfirmOwnerForm[_formIndex][msg.sender],
+            "is not confirm form"
+        );
+        ownerForm storage form = ownerForms[_formIndex];
         form.numConfirmation--;
-        isConfirmOwnerForm[_formId][msg.sender] = false;
-        emit RevokeOwnerFormConfirmation(_formId, msg.sender);
+        isConfirmOwnerForm[_formIndex][msg.sender] = false;
+        emit RevokeOwnerFormConfirmation(_formIndex, msg.sender);
     }
 
-    function excuteOwnerForm(uint256 _formId)
+    function excuteOwnerForm(uint256 _formIndex)
         public
         onlyOwner(msg.sender)
-        isExistForm(_formId)
-        isNotExpireForm(_formId)
+        isExistForm(_formIndex)
+        isNotExpireForm(_formIndex)
+        isNotExcuteOwnerForm(_formIndex)
     {
-        ownerForm storage form = ownerForms[_formId];
-        form.isExpire = true;
+        ownerForm storage form = ownerForms[_formIndex];
+        require(
+            form.numConfirmation >= numConfirmationsRequired,
+            "not confirm enough"
+        );
+        form.executed = true;
         numConfirmationsRequired = form.numConfirmationsRequired;
         if (form.isRemoveOwner) {
             _deleteOwner(form.ownerAddress);
         } else {
             owners.push(form.ownerAddress);
         }
-        emit ExcuteOwnerForm(_formId, msg.sender, form.ownerAddress);
+        emit ExcuteOwnerForm(_formIndex, msg.sender, form.ownerAddress);
     }
 
     function _deleteOwner(address _owner) private {
@@ -316,28 +345,28 @@ contract MultiSigWallet {
         }
     }
 
-    function getOwnerForm(uint256 _formId)
+    function getOwnerForm(uint256 _formIndex)
         public
         view
-        isExistForm(_formId)
+        isExistForm(_formIndex)
         returns (
             bytes memory _desc,
             uint8 _numConfirmation,
             uint8 _numConfirmationsRequired,
             uint64 _expireTime,
             bool _isRemoveOwne,
-            bool _isExpire,
+            bool _executed,
             address _ownerAddress
         )
     {
-        ownerForm memory form = ownerForms[_formId];
+        ownerForm memory form = ownerForms[_formIndex];
         return (
             form.desc,
             form.numConfirmation,
             form.numConfirmationsRequired,
             form.expireTime,
             form.isRemoveOwner,
-            form.isExpire,
+            form.executed,
             form.ownerAddress
         );
     }
