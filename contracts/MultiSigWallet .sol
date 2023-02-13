@@ -18,36 +18,34 @@ contract MultiSigWallet {
         address to,
         uint256 txIndex,
         uint256 value,
-        bytes data,
         uint64 expierTime
     );
     event SubmitOwnerForm(
         address suggesOwner,
         uint256 formIndex,
-        bytes desc,
-        uint8 numConfirmationsRequired,
+        string desc,
+        uint8 suggNumConfirmationsRequired,
         uint256 expireTime,
         bool isRemovedOwner
     );
 
     address[] public owners;
-    uint8 public numConfirmationsRequired;
+    uint8 public NumConfirmationsRequired;
     struct Transaction {
         address to;
         uint64 value;
         uint64 expireTime;
         uint8 numConfirmations;
-        bytes data;
         bool executed;
     }
     struct ownerForm {
-        bytes desc;
+        string desc;
         uint8 numConfirmation;
-        uint8 numConfirmationsRequired;
+        uint8 suggNumConfirmationsRequired;
         uint64 expireTime;
         bool isRemoveOwner;
         bool executed;
-        address ownerAddress;
+        address suggOwnerAddress;
     }
     mapping(address => bool) isOwner;
     // mapping from tx index => owner => bool
@@ -70,7 +68,7 @@ contract MultiSigWallet {
     }
     modifier isNotExpire(uint256 txIndex) {
         uint64 nowTime = uint64(block.timestamp);
-        require(nowTime < transactions[txIndex].expireTime, "form dos expired");
+        require(nowTime < transactions[txIndex].expireTime, "The tx has expired");
         _;
     }
     modifier isExistTransaction(uint256 txIndex) {
@@ -90,7 +88,7 @@ contract MultiSigWallet {
     }
     modifier isNotExpireForm(uint256 formIndex) {
         uint64 nowTime = uint64(block.timestamp);
-        require(nowTime < ownerForms[formIndex].expireTime, "form dos expired");
+        require(nowTime < ownerForms[formIndex].expireTime, "The form has expired");
         _;
     }
     modifier isNotExcuteOwnerForm(uint256 formIndex) {
@@ -142,13 +140,12 @@ contract MultiSigWallet {
             isOwner[owner] = true;
             owners.push(owner);
         }
-        numConfirmationsRequired = _numConfirmationRequired;
+        NumConfirmationsRequired = _numConfirmationRequired;
     }
 
     function submitTransaction(
         address _to,
-        uint64 _value,
-        bytes memory _data
+        uint64 _value
     ) public onlyOwner(msg.sender) {
         uint256 txId = transactions.length;
         uint64 expireTime = uint64((block.timestamp) + 1 weeks);
@@ -157,22 +154,16 @@ contract MultiSigWallet {
                 to: _to,
                 value: _value,
                 expireTime: expireTime,
-                data: _data,
                 executed: false,
                 numConfirmations: 0
             })
         );
-        emit SubmitTransaction(
-            msg.sender,
-            _to,
-            txId,
-            _value,
-            _data,
-            expireTime
-        );
+        emit SubmitTransaction(msg.sender, _to, txId, _value, expireTime);
     }
 
-    function confirmTransaction(uint256 _txId)
+    function confirmTransaction(
+        uint256 _txId
+    )
         public
         onlyOwner(msg.sender)
         isExistTransaction(_txId)
@@ -190,7 +181,9 @@ contract MultiSigWallet {
         );
     }
 
-    function revokeTransaction(uint256 _txIndex)
+    function revokeTransaction(
+        uint256 _txIndex
+    )
         public
         onlyOwner(msg.sender)
         isNotExpire(_txIndex)
@@ -204,8 +197,11 @@ contract MultiSigWallet {
         emit RevokeConfirmation(_txIndex, msg.sender);
     }
 
-    function excuteTransaction(uint256 _txIndex)
+    function excuteTransaction(
+        uint256 _txIndex
+    )
         public
+        payable
         onlyOwner(msg.sender)
         isNotExpire(_txIndex)
         isExistTransaction(_txIndex)
@@ -213,43 +209,36 @@ contract MultiSigWallet {
     {
         Transaction storage transaction = transactions[_txIndex];
         require(
-            transaction.numConfirmations >= numConfirmationsRequired,
-            "cannot execute tx"
+            transaction.numConfirmations >= NumConfirmationsRequired,
+            "Confirmation is not enough"
         );
         transaction.executed = true;
-        (bool success, ) = transaction.to.call{value: transaction.value}(
-            transaction.data
-        );
+        (bool success, ) = transaction.to.call{value: transaction.value}("");
 
         require(success, "tx failed");
         emit ExcuteTransaction(_txIndex, msg.sender);
     }
 
-    function getTransaction(uint256 _txIndex)
+    function getTransaction(
+        uint256 _txIndex
+    )
         public
         view
-        returns (
-            address to,
-            uint64 value,
-            uint8 numConfirmation,
-            bytes memory data,
-            bool excuted
-        )
+        returns (address to, uint64 value, uint8 numConfirmation, bool excuted)
     {
         Transaction memory transaction = transactions[_txIndex];
         return (
             transaction.to,
             transaction.value,
             transaction.numConfirmations,
-            transaction.data,
             transaction.executed
         );
     }
 
     function submitOwnerForm(
-        bytes memory _desc,
+        string memory _desc,
         uint8 _suggNumConfirmRequired,
-        address _ownerAddress,
+        address _suggOwnerAddress,
         bool _isSubmitRemovedOwnerForm
     )
         public
@@ -259,22 +248,25 @@ contract MultiSigWallet {
             _isSubmitRemovedOwnerForm
         )
     {
-        require(_ownerAddress != address(0), "address not valid");
+        require(_suggOwnerAddress != address(0), "address invalid");
+        if(_isSubmitRemovedOwnerForm){
+            require( isOwner[_suggOwnerAddress],"assress invalid");
+        }
         uint256 id = ownerForms.length;
         uint64 expireTime = uint64((block.timestamp) + 1 weeks);
         ownerForms.push(
             ownerForm({
                 desc: _desc,
-                numConfirmationsRequired: _suggNumConfirmRequired,
+                suggNumConfirmationsRequired: _suggNumConfirmRequired,
                 numConfirmation: 0,
                 expireTime: expireTime,
-                ownerAddress: _ownerAddress,
+                suggOwnerAddress: _suggOwnerAddress,
                 executed: false,
                 isRemoveOwner: _isSubmitRemovedOwnerForm
             })
         );
         emit SubmitOwnerForm(
-            _ownerAddress,
+            _suggOwnerAddress,
             id,
             _desc,
             _suggNumConfirmRequired,
@@ -283,7 +275,9 @@ contract MultiSigWallet {
         );
     }
 
-    function confirmOwnerForm(uint256 _formIndex)
+    function confirmOwnerForm(
+        uint256 _formIndex
+    )
         public
         onlyOwner(msg.sender)
         isExistForm(_formIndex)
@@ -297,7 +291,9 @@ contract MultiSigWallet {
         emit ConfirmOwnerForm(_formIndex, msg.sender);
     }
 
-    function revokeOwnerForm(uint256 _formIndex)
+    function revokeOwnerForm(
+        uint256 _formIndex
+    )
         public
         onlyOwner(msg.sender)
         isExistForm(_formIndex)
@@ -314,7 +310,9 @@ contract MultiSigWallet {
         emit RevokeOwnerFormConfirmation(_formIndex, msg.sender);
     }
 
-    function excuteOwnerForm(uint256 _formIndex)
+    function excuteOwnerForm(
+        uint256 _formIndex
+    )
         public
         onlyOwner(msg.sender)
         isExistForm(_formIndex)
@@ -323,36 +321,42 @@ contract MultiSigWallet {
     {
         ownerForm storage form = ownerForms[_formIndex];
         require(
-            form.numConfirmation >= numConfirmationsRequired,
-            "not confirm enough"
+            form.numConfirmation >= NumConfirmationsRequired,
+            "Confirmation is not enough"
         );
         form.executed = true;
-        numConfirmationsRequired = form.numConfirmationsRequired;
+        NumConfirmationsRequired = form.suggNumConfirmationsRequired;
         if (form.isRemoveOwner) {
-            _deleteOwner(form.ownerAddress);
+            _deleteOwner(form.suggOwnerAddress);
+            isOwner[form.suggOwnerAddress] = false;
         } else {
-            owners.push(form.ownerAddress);
+            owners.push(form.suggOwnerAddress);
+            isOwner[form.suggOwnerAddress] = true;
         }
-        emit ExcuteOwnerForm(_formIndex, msg.sender, form.ownerAddress);
+        emit ExcuteOwnerForm(_formIndex, msg.sender, form.suggOwnerAddress);
     }
 
     function _deleteOwner(address _owner) private {
         for (uint256 i = 0; i < owners.length; i++) {
             if (owners[i] == _owner) {
                 delete owners[i];
+                owners[i] = owners[owners.length - 1];
+                owners.pop();
                 return;
             }
         }
     }
 
-    function getOwnerForm(uint256 _formIndex)
+    function getOwnerForm(
+        uint256 _formIndex
+    )
         public
         view
         isExistForm(_formIndex)
         returns (
-            bytes memory _desc,
+            string memory _desc,
             uint8 _numConfirmation,
-            uint8 _numConfirmationsRequired,
+            uint8 _suggNumConfirmationsRequired,
             uint64 _expireTime,
             bool _isRemoveOwne,
             bool _executed,
@@ -363,15 +367,19 @@ contract MultiSigWallet {
         return (
             form.desc,
             form.numConfirmation,
-            form.numConfirmationsRequired,
+            form.suggNumConfirmationsRequired,
             form.expireTime,
             form.isRemoveOwner,
             form.executed,
-            form.ownerAddress
+            form.suggOwnerAddress
         );
     }
 
     function getOwnersCount() public view returns (uint256) {
         return owners.length;
     }
+
+    receive() external payable {}
+
+    fallback() external payable {}
 }
