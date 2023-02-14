@@ -33,7 +33,7 @@ contract MultiSigWallet {
     uint8 public NumConfirmationsRequired;
     struct Transaction {
         address to;
-        uint64 value;
+        uint256 value;
         uint64 expireTime;
         uint8 numConfirmations;
         bool executed;
@@ -68,7 +68,10 @@ contract MultiSigWallet {
     }
     modifier isNotExpire(uint256 txIndex) {
         uint64 nowTime = uint64(block.timestamp);
-        require(nowTime < transactions[txIndex].expireTime, "The tx has expired");
+        require(
+            nowTime < transactions[txIndex].expireTime,
+            "The tx has expired"
+        );
         _;
     }
     modifier isExistTransaction(uint256 txIndex) {
@@ -88,7 +91,10 @@ contract MultiSigWallet {
     }
     modifier isNotExpireForm(uint256 formIndex) {
         uint64 nowTime = uint64(block.timestamp);
-        require(nowTime < ownerForms[formIndex].expireTime, "The form has expired");
+        require(
+            nowTime < ownerForms[formIndex].expireTime,
+            "The form has expired"
+        );
         _;
     }
     modifier isNotExcuteOwnerForm(uint256 formIndex) {
@@ -126,7 +132,10 @@ contract MultiSigWallet {
         _;
     }
 
-    constructor(address[] memory _owners, uint8 _numConfirmationRequired) {
+    constructor(
+        address[] memory _owners,
+        uint8 _numConfirmationRequired
+    ) payable {
         require(_owners.length > 1, "owners required");
         require(
             _numConfirmationRequired <= _owners.length &&
@@ -135,7 +144,7 @@ contract MultiSigWallet {
         );
         for (uint256 i = 0; i < _owners.length; i++) {
             address owner = _owners[i];
-            require(owner != address(0), "invalid owner");
+            require(owner != address(0), "invalid owner address");
             require(!isOwner[owner], "owner not unique");
             isOwner[owner] = true;
             owners.push(owner);
@@ -145,8 +154,9 @@ contract MultiSigWallet {
 
     function submitTransaction(
         address _to,
-        uint64 _value
+        uint256 _value
     ) public onlyOwner(msg.sender) {
+        require(address(this).balance >= _value, "balance not enough");
         uint256 txId = transactions.length;
         uint64 expireTime = uint64((block.timestamp) + 1 weeks);
         transactions.push(
@@ -224,7 +234,7 @@ contract MultiSigWallet {
     )
         public
         view
-        returns (address to, uint64 value, uint8 numConfirmation, bool excuted)
+        returns (address to, uint256 value, uint8 numConfirmation, bool excuted)
     {
         Transaction memory transaction = transactions[_txIndex];
         return (
@@ -249,8 +259,8 @@ contract MultiSigWallet {
         )
     {
         require(_suggOwnerAddress != address(0), "address invalid");
-        if(_isSubmitRemovedOwnerForm){
-            require( isOwner[_suggOwnerAddress],"assress invalid");
+        if (_isSubmitRemovedOwnerForm) {
+            require(isOwner[_suggOwnerAddress], "address invalid");
         }
         uint256 id = ownerForms.length;
         uint64 expireTime = uint64((block.timestamp) + 1 weeks);
